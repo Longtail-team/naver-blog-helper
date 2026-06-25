@@ -4,18 +4,11 @@
 헤르메스 'content-carousel' 산출물을 카드별 구조로 변환하고,
 1080x1350 미리보기 HTML과 인스타 캡션 초안을 생성한다.
 
-파일 구조:
-    == 제목 ==
-    스킬: ... | 모드: ... | 포맷: ... | 톤: ...
-    제목 유형: ... | 주제: ...
-    --------------------------------------------------
-    [표지 / Card 1]
-    (카드 텍스트)
-    --------------------------------------------------
-    [본문 / Card 2]
-    ...
-    --------------------------------------------------
-    [디자인 메모] ... [검수 메모] ...
+두 가지 헤더 형식을 모두 지원한다:
+    형식 A:  [표지 / Card 1]      (카드마다 ---- 구분선)
+    형식 B:  ---[표지]---,  ---[카드 2 — 상황 설정]---,  ---[CTA]---
+
+본문에 섞인 검수용 메모(〔전문가 보강…〕, [검증: …])는 카드 표시에서 자동 제거한다.
 
 사용:
     from carousel_parser import parse_carousel, build_caption, cards_preview_html
@@ -27,44 +20,65 @@ import html
 import re
 from typing import Any
 
-# 카드/블록 구분선 (--- 3개 이상)
-_SEP_RE = re.compile(r"^-{3,}\s*$", re.MULTILINE)
-# 카드 헤더: [표지 / Card 1] , [본문 / Card 2] 등
-_CARD_HDR_RE = re.compile(r"^\[(?P<label>[^/\]]+?)\s*/\s*Card\s*(?P<num>\d+)\s*\]\s*$")
+
+# ---------------------------------------------------------------------------
+# 헤더/구분선 인식
+# ---------------------------------------------------------------------------
+
+# 순수 구분선: ---- 또는 ==== (내용 없이 기호만)
+_PURE_DELIM_RE = re.compile(r"^[\-=]{3,}$")
+# 디자인/검수 메모 헤더 (괄호 유무 무관)
+_DESIGN_HDR_RE = re.compile(r"^\[?\s*디자인\s*메모\s*\]?$")
+_REVIEW_HDR_RE = re.compile(r"^\[?\s*검수\s*메모\s*\]?$")
+# 형식 B 헤더:  ---[ ... ]---
+_HDR_DASHED_RE = re.compile(r"^-{2,}\[(?P<inner>.+?)\]-{2,}$")
+# 형식 A 헤더:  [ ... ]  (단, 'Card N' 포함 시에만 카드 헤더로 인정 → 본문 속 [검증:…] 와 구분)
+_HDR_BRACKET_RE = re.compile(r"^\[(?P<inner>.+?)\]$")
+
+# 본문에서 제거할 검수용 메모
+_ANNOTATION_RES = [
+    re.compile(r"〔[^〕]*〕", re.DOTALL),
+    re.compile(r"\[검증[^\]]*\]"),
+    re.compile(r"\[검색[^\]]*\]"),
+    re.compile(r"\[전문가\s*보강[^\]]*\]"),
+]
+
+
+def _match_header(s: str) -> str | None:
+    """카드 헤더면 안쪽 라벨 문자열을, 아니면 None을 반환."""
+    m = _HDR_DASHED_RE.match(s)
+    if m:
+        return m.group("inner").strip()
+    m = _HDR_BRACKET_RE.match(s)
+    if m and re.search(r"Card\s*\d+", m.group("inner"), re.I):
+        return m.group("inner").strip()
+    return None
+
+
+def _label_from_inner(inner: str) -> str:
+    """헤더 안쪽 문자열에서 표시용 라벨 추출.
+
+    '표지 / Card 1' → '표지',  '카드 2 — 상황 설정' → '상황 설정',
+    '표지' → '표지',  'CTA' → 'CTA'
+    """
+    inner = re.sub(r"\s*/\s*Card\s*\d+\s*$", "", inner, flags=re.I).strip()
+    m = re.match(r"^카드\s*\d+\s*[—\-–]\s*(.+)$", inner)
+    if m:
+        return m.group(1).strip()
+    return inner.strip()
+
+
+def _clean_card_text(text: str) -> str:
+    """카드 본문에서 검수용 메모를 제거하고 과도한 빈 줄을 정리."""
+    for r in _ANNOTATION_RES:
+        text = r.sub("", text)
+    text = re.sub(r"\n[ \t]*\n[ \t]*\n+", "\n\n", text)
+    return text.strip("\n")
 
 
 # ---------------------------------------------------------------------------
 # 파싱
 # ---------------------------------------------------------------------------
-
-def _parse_header(block: str, result: dict[str, Any]) -> None:
-    """제목(== ... ==)과 메타(key: value | key: value)를 추출."""
-    for line in block.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        if line.startswith("==") and line.endswith("=="):
-            result["title"] = line.strip("=").strip()
-        elif ":" in line:
-            for part in line.split("|"):
-                if ":" in part:
-                    k, v = part.split(":", 1)
-                    if k.strip():
-                        result["meta"][k.strip()] = v.strip()
-
-
-def _parse_notes(chunk: str, result: dict[str, Any]) -> None:
-    """[디자인 메모] / [검수 메모] 블록을 텍스트로 보관."""
-    if "[검수 메모]" in chunk:
-        idx = chunk.index("[검수 메모]")
-        design_part, review_part = chunk[:idx], chunk[idx:]
-    else:
-        design_part, review_part = chunk, ""
-    if "[디자인 메모]" in design_part:
-        result["design_notes"] = design_part.replace("[디자인 메모]", "").strip()
-    if review_part:
-        result["review_notes"] = review_part.replace("[검수 메모]", "").strip()
-
 
 def parse_carousel(text: str) -> dict[str, Any]:
     """캐러셀 초안 텍스트를 구조화 딕셔너리로 변환한다.
@@ -72,7 +86,7 @@ def parse_carousel(text: str) -> dict[str, Any]:
     반환:
         title         : str
         meta          : dict (스킬/모드/포맷/톤/제목 유형/주제 ...)
-        cards         : [{"num","label","text","lines"}, ...]  (num 오름차순)
+        cards         : [{"num","label","text","lines"}, ...]  (등장 순서)
         design_notes  : str
         review_notes  : str
     """
@@ -80,31 +94,79 @@ def parse_carousel(text: str) -> dict[str, Any]:
         "title": "", "meta": {}, "cards": [],
         "design_notes": "", "review_notes": "",
     }
+    meta = result["meta"]
 
-    chunks = [c.strip("\n") for c in _SEP_RE.split(text)]
-    if not chunks:
-        return result
+    cards: list[dict[str, Any]] = []
+    cur: dict[str, Any] | None = None
+    design_lines: list[str] = []
+    review_lines: list[str] = []
+    section = "head"  # head → cards → design → review
 
-    _parse_header(chunks[0], result)
+    for raw in text.splitlines():
+        line = raw.rstrip()
+        s = line.strip()
 
-    for chunk in chunks[1:]:
-        if not chunk.strip():
+        # 메모 섹션 헤더 전환
+        if _DESIGN_HDR_RE.match(s):
+            if cur:
+                cards.append(cur)
+                cur = None
+            section = "design"
             continue
-        lines = chunk.strip("\n").splitlines()
-        first = lines[0].strip() if lines else ""
-        m = _CARD_HDR_RE.match(first)
-        if m:
-            body = "\n".join(lines[1:]).strip("\n")
-            result["cards"].append({
-                "num": int(m.group("num")),
-                "label": m.group("label").strip(),
-                "text": body,
-                "lines": body.splitlines(),
-            })
-        elif "[디자인 메모]" in chunk or "[검수 메모]" in chunk:
-            _parse_notes(chunk, result)
+        if _REVIEW_HDR_RE.match(s):
+            if cur:
+                cards.append(cur)
+                cur = None
+            section = "review"
+            continue
 
-    result["cards"].sort(key=lambda c: c["num"])
+        if section == "design":
+            design_lines.append(line)
+            continue
+        if section == "review":
+            review_lines.append(line)
+            continue
+
+        # 순수 구분선은 건너뜀
+        if _PURE_DELIM_RE.match(s):
+            continue
+
+        # 카드 헤더?
+        inner = _match_header(s)
+        if inner is not None:
+            if cur:
+                cards.append(cur)
+            cur = {"label": _label_from_inner(inner), "lines": []}
+            section = "cards"
+            continue
+
+        if section == "head":
+            if s.startswith("==") and s.endswith("=="):
+                result["title"] = s.strip("=").strip()
+            elif ":" in s:
+                for part in s.split("|"):
+                    if ":" in part:
+                        k, v = part.split(":", 1)
+                        if k.strip():
+                            meta[k.strip()] = v.strip()
+            continue
+
+        # 카드 본문
+        if cur is not None:
+            cur["lines"].append(line)
+
+    if cur:
+        cards.append(cur)
+
+    # 번호 부여 + 본문 정리
+    for i, c in enumerate(cards):
+        c["num"] = i + 1
+        c["text"] = _clean_card_text("\n".join(c["lines"]).strip("\n"))
+        c["lines"] = c["text"].splitlines()
+    result["cards"] = cards
+
+    result["design_notes"] = "\n".join(design_lines).strip()
+    result["review_notes"] = "\n".join(review_lines).strip()
     return result
 
 
@@ -117,7 +179,6 @@ def parse_carousel_file(path: str, encoding: str = "utf-8") -> dict[str, Any]:
 # 인스타 캡션 초안 생성
 # ---------------------------------------------------------------------------
 
-# 해시태그 추출 시 떼어낼 흔한 조사
 _PARTICLES = ("에게", "에서", "으로", "에는", "이라는", "은", "는", "이", "가",
               "을", "를", "의", "에", "과", "와", "도", "로")
 
@@ -130,8 +191,8 @@ def _suggest_hashtags(meta: dict[str, str]) -> str:
             if w.endswith(p) and len(w) > len(p) + 1:
                 w = w[: -len(p)]
                 break
-        w = w.strip()
-        if len(w) >= 2:
+        w = w.strip(" →·,.")
+        if len(w) >= 2 and re.search(r"[가-힣A-Za-z]", w):
             words.append(w)
 
     seen = set()
@@ -146,24 +207,27 @@ def _suggest_hashtags(meta: dict[str, str]) -> str:
 def build_caption(parsed: dict[str, Any]) -> str:
     """카드 내용으로 인스타 캡션 초안을 조립한다(편집 전제).
 
-    구성: 표지 후킹 → 단계 요약 → 마무리 한마디 → CTA → 해시태그
+    구성: 표지 후킹 → 중간 카드 첫 줄 요약 → 마무리 → CTA → 해시태그
     """
     cards = parsed["cards"]
     if not cards:
         return ""
 
-    def find(label: str):
-        return next((c for c in cards if c["label"] == label), None)
-
     cover = cards[0]
-    closing = find("마무리")
-    cta = next((c for c in reversed(cards) if c["label"].upper() == "CTA"), None)
-    body_cards = [c for c in cards if c["label"] == "본문"]
-    steps = [c["text"].splitlines()[0].strip() for c in body_cards if c["text"].strip()]
+    closing = next((c for c in reversed(cards) if "마무리" in c["label"]), None)
+    cta = next((c for c in reversed(cards) if "CTA" in c["label"].upper()), None)
+
+    skip = {id(cover)}
+    if closing:
+        skip.add(id(closing))
+    if cta:
+        skip.add(id(cta))
+    middle = [c for c in cards if id(c) not in skip]
+    lead = [c["text"].splitlines()[0].strip() for c in middle if c["text"].strip()]
 
     parts: list[str] = [cover["text"].strip()]
-    if steps:
-        parts += ["", "\n".join(steps)]
+    if lead:
+        parts += ["", "\n".join(lead)]
     if closing:
         parts += ["", closing["text"].strip()]
     if cta:
@@ -187,16 +251,27 @@ _ROLE_STYLE = {
 _DEFAULT_STYLE = ("linear-gradient(135deg,#f6f7ff,#e9ecff)", "#1f2340")
 
 
+def _role_style(label: str):
+    """라벨로 역할별 색을 고른다(부분 일치 — '마무리 착지'도 마무리로)."""
+    if "표지" in label:
+        return _ROLE_STYLE["표지"]
+    if "CTA" in label.upper():
+        return _ROLE_STYLE["CTA"]
+    if "마무리" in label:
+        return _ROLE_STYLE["마무리"]
+    return _DEFAULT_STYLE
+
+
 def cards_preview_html(cards: list[dict[str, Any]], font_size: int = 15,
                        columns: int = 4) -> str:
     """카드들을 1080:1350(4:5) 비율 고정으로 화면에 그리드 나열한 HTML을 만든다.
 
     카드 너비는 그리드 칸에 맞춰 자동(반응형), 비율은 4:5 고정.
-    글자 크기(font_size)만 조절한다. 기본 3열.
+    글자 크기(font_size)만 조절한다. 기본 4열.
     """
     items = []
     for c in cards:
-        bg, fg = _ROLE_STYLE.get(c["label"], _DEFAULT_STYLE)
+        bg, fg = _role_style(c["label"])
         # 빈 줄로 나뉜 문단 단위로 렌더 — 문단 내 줄바꿈은 <br>,
         # 문단 사이는 gap(약 1줄 느낌)으로 제어해 여백이 과하지 않게.
         paras = [p for p in re.split(r"\n\s*\n", c["text"].strip()) if p.strip()]
