@@ -31,9 +31,10 @@ _PURE_DELIM_RE = re.compile(r"^[\-=]{3,}$")
 _DESIGN_HDR_RE = re.compile(r"^\[?\s*디자인\s*메모\b.*$")
 _REVIEW_HDR_RE = re.compile(r"^\[?\s*검수\s*메모\b.*$")
 # 대시로 감싼 헤더:  ---[ ... ]---  (대시가 있으면 무조건 카드 헤더로 인정)
-_HDR_DASHED_RE = re.compile(r"^-{2,}\[(?P<inner>.+?)\]-{2,}$")
-# 대괄호 헤더:  [ ... ]
-_HDR_BRACKET_RE = re.compile(r"^\[(?P<inner>.+?)\]$")
+# 닫는 대시 뒤 꼬리표가 붙어도 인식 ($ 미고정)
+_HDR_DASHED_RE = re.compile(r"^-{2,}\[(?P<inner>.+?)\]-{2,}")
+# 대괄호 헤더:  [ ... ]   닫는 괄호 뒤 설명 꼬리표('[표지 — 카드 1] ← …')가 붙어도 인식
+_HDR_BRACKET_RE = re.compile(r"^\[(?P<inner>.+?)\]")
 
 # 카드 역할을 가리키는 키워드 (대괄호 헤더 판정용 — 본문 속 [검증:…] 와 구분)
 _CARD_KEYWORDS = ("표지", "커버", "cover", "본문", "내용", "마무리", "엔딩",
