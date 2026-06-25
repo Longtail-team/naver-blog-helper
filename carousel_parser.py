@@ -188,7 +188,7 @@ _DEFAULT_STYLE = ("linear-gradient(135deg,#f6f7ff,#e9ecff)", "#1f2340")
 
 
 def cards_preview_html(cards: list[dict[str, Any]], font_size: int = 15,
-                       columns: int = 3) -> str:
+                       columns: int = 4) -> str:
     """카드들을 1080:1350(4:5) 비율 고정으로 화면에 그리드 나열한 HTML을 만든다.
 
     카드 너비는 그리드 칸에 맞춰 자동(반응형), 비율은 4:5 고정.

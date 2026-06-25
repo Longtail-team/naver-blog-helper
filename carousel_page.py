@@ -95,24 +95,44 @@ if meta:
 
 st.divider()
 
+# 파일이 바뀌면 카드 편집 상태 초기화 (같은 파일 작업 중 편집은 유지)
+cards = data["cards"]
+file_sig = f"{uploaded.name}:{len(uploaded.getvalue())}"
+if st.session_state.get("_carousel_sig") != file_sig:
+    st.session_state["_carousel_sig"] = file_sig
+    for i, c in enumerate(cards):
+        st.session_state[f"card_text_{i}"] = c["text"]
+
+# 편집이 반영된 현재 카드 텍스트 (미리보기·복사에 사용)
+edited_cards = [
+    {**c, "text": st.session_state.get(f"card_text_{i}", c["text"])}
+    for i, c in enumerate(cards)
+]
+
 # ---------------------------------------------------------------------------
-# 1) 카드 미리보기 (1080x1350)
+# 1) 카드 미리보기 (1080x1350) — 편집 즉시 반영
 # ---------------------------------------------------------------------------
 st.header("1. 카드 미리보기 (1080×1350)")
 font_size = st.slider("카드 글자 크기(px)", 10, 28, 15)
-st.caption("실제 1080×1350(4:5) 비율로 한 화면에 3열로 나열했어요. (색·폰트는 Canva에서 입힙니다)")
-st.markdown(cards_preview_html(data["cards"], font_size=font_size), unsafe_allow_html=True)
+st.caption("실제 1080×1350(4:5) 비율로 한 화면에 4열로 나열했어요. "
+           "아래에서 카드 텍스트를 고치면 즉시 반영됩니다. (색·폰트는 Canva에서)")
+st.markdown(cards_preview_html(edited_cards, font_size=font_size, columns=4),
+            unsafe_allow_html=True)
 
 st.divider()
 
 # ---------------------------------------------------------------------------
-# 2) 카드별 텍스트 (Canva 작업용)
+# 2) 카드별 텍스트 (수정 가능 — 미리보기에 반영)
 # ---------------------------------------------------------------------------
-st.header("2. 카드별 텍스트")
-st.caption("각 박스 우측 상단 📋 로 복사해서 Canva 카드에 붙여넣으세요.")
+st.header("2. 카드별 텍스트 (수정 가능)")
+st.caption("내용을 고치면 위 미리보기에 바로 반영돼요. 복사는 아래 '복사용' 박스의 📋 를 쓰세요.")
 cols = st.columns(2)
-for i, c in enumerate(data["cards"]):
+for i, c in enumerate(cards):
     with cols[i % 2]:
+        st.text_area(f"#{c['num']} · {c['label']}", key=f"card_text_{i}", height=150)
+
+with st.expander("📋 카드별 복사용 (수정 반영됨)"):
+    for c in edited_cards:
         st.markdown(f"**#{c['num']} · {c['label']}**")
         st.code(c["text"], language=None)
 
