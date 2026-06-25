@@ -27,13 +27,19 @@ from typing import Any
 
 # 순수 구분선: ---- 또는 ==== (내용 없이 기호만)
 _PURE_DELIM_RE = re.compile(r"^[\-=]{3,}$")
-# 디자인/검수 메모 헤더 (괄호 유무 무관)
-_DESIGN_HDR_RE = re.compile(r"^\[?\s*디자인\s*메모\s*\]?$")
-_REVIEW_HDR_RE = re.compile(r"^\[?\s*검수\s*메모\s*\]?$")
-# 형식 B 헤더:  ---[ ... ]---
+# 디자인/검수 메모 헤더 (괄호 유무·꼬리표 무관: '[검수 메모 — G2/G3]' 도 인식)
+_DESIGN_HDR_RE = re.compile(r"^\[?\s*디자인\s*메모\b.*$")
+_REVIEW_HDR_RE = re.compile(r"^\[?\s*검수\s*메모\b.*$")
+# 대시로 감싼 헤더:  ---[ ... ]---  (대시가 있으면 무조건 카드 헤더로 인정)
 _HDR_DASHED_RE = re.compile(r"^-{2,}\[(?P<inner>.+?)\]-{2,}$")
-# 형식 A 헤더:  [ ... ]  (단, 'Card N' 포함 시에만 카드 헤더로 인정 → 본문 속 [검증:…] 와 구분)
+# 대괄호 헤더:  [ ... ]
 _HDR_BRACKET_RE = re.compile(r"^\[(?P<inner>.+?)\]$")
+
+# 카드 역할을 가리키는 키워드 (대괄호 헤더 판정용 — 본문 속 [검증:…] 와 구분)
+_CARD_KEYWORDS = ("표지", "커버", "cover", "본문", "내용", "마무리", "엔딩",
+                  "클로징", "마지막", "cta", "카드", "card", "장면")
+# 주석성 대괄호(헤더 아님) 접두어 — 느슨 모드에서 제외
+_ANNOT_PREFIX = ("검증", "검색", "근거", "참고", "메모", "이미지", "자막", "note")
 
 # 본문에서 제거할 검수용 메모
 _ANNOTATION_RES = [
@@ -44,28 +50,44 @@ _ANNOTATION_RES = [
 ]
 
 
-def _match_header(s: str) -> str | None:
+def _looks_like_card_label(inner: str, loose: bool) -> bool:
+    """대괄호 안쪽이 카드 헤더로 볼 만한지 판정.
+
+    엄격 모드: 카드 역할 키워드를 포함해야 함.
+    느슨 모드(폴백): 주석성 접두어(검증/메모/…)만 아니면 카드로 본다.
+    """
+    low = inner.lower().strip()
+    if loose:
+        return not any(low.startswith(p.lower()) for p in _ANNOT_PREFIX)
+    return any(k in low for k in _CARD_KEYWORDS)
+
+
+def _match_header(s: str, loose: bool = False) -> str | None:
     """카드 헤더면 안쪽 라벨 문자열을, 아니면 None을 반환."""
     m = _HDR_DASHED_RE.match(s)
     if m:
         return m.group("inner").strip()
     m = _HDR_BRACKET_RE.match(s)
-    if m and re.search(r"Card\s*\d+", m.group("inner"), re.I):
+    if m and _looks_like_card_label(m.group("inner"), loose):
         return m.group("inner").strip()
     return None
 
 
 def _label_from_inner(inner: str) -> str:
-    """헤더 안쪽 문자열에서 표시용 라벨 추출.
+    """헤더 안쪽 문자열에서 표시용 라벨 추출(카드 번호 토큰 제거).
 
-    '표지 / Card 1' → '표지',  '카드 2 — 상황 설정' → '상황 설정',
-    '표지' → '표지',  'CTA' → 'CTA'
+    '표지 / Card 1' → '표지',  '본문 카드 2' → '본문',  '표지 — 카드 1' → '표지',
+    '카드 2 — 상황 설정' → '상황 설정',  'CTA 카드 11' → 'CTA',  'CTA' → 'CTA'
     """
-    inner = re.sub(r"\s*/\s*Card\s*\d+\s*$", "", inner, flags=re.I).strip()
-    m = re.match(r"^카드\s*\d+\s*[—\-–]\s*(.+)$", inner)
+    s = inner.strip()
+    # 'B형': 번호가 앞에 오고 뒤에 설명 → 설명을 라벨로
+    m = re.match(r"^카드\s*\d+\s*[—\-–]\s*(.+)$", s)
     if m:
         return m.group(1).strip()
-    return inner.strip()
+    # 끝/앞에 붙은 '카드 N' / 'Card N' 토큰과 주변 구분자 제거
+    s = re.sub(r"\s*[—\-–/]?\s*(?:카드|Card)\s*\d+\s*$", "", s, flags=re.I)
+    s = re.sub(r"^(?:카드|Card)\s*\d+\s*[—\-–/]?\s*", "", s, flags=re.I)
+    return s.strip(" —-–/") or inner.strip()
 
 
 def _clean_card_text(text: str) -> str:
@@ -80,16 +102,8 @@ def _clean_card_text(text: str) -> str:
 # 파싱
 # ---------------------------------------------------------------------------
 
-def parse_carousel(text: str) -> dict[str, Any]:
-    """캐러셀 초안 텍스트를 구조화 딕셔너리로 변환한다.
-
-    반환:
-        title         : str
-        meta          : dict (스킬/모드/포맷/톤/제목 유형/주제 ...)
-        cards         : [{"num","label","text","lines"}, ...]  (등장 순서)
-        design_notes  : str
-        review_notes  : str
-    """
+def _parse(text: str, loose: bool) -> dict[str, Any]:
+    """헤더 구동 1패스 파싱. loose=True면 미지 형식까지 최대한 카드로 인식."""
     result: dict[str, Any] = {
         "title": "", "meta": {}, "cards": [],
         "design_notes": "", "review_notes": "",
@@ -132,7 +146,7 @@ def parse_carousel(text: str) -> dict[str, Any]:
             continue
 
         # 카드 헤더?
-        inner = _match_header(s)
+        inner = _match_header(s, loose=loose)
         if inner is not None:
             if cur:
                 cards.append(cur)
@@ -167,6 +181,27 @@ def parse_carousel(text: str) -> dict[str, Any]:
 
     result["design_notes"] = "\n".join(design_lines).strip()
     result["review_notes"] = "\n".join(review_lines).strip()
+    return result
+
+
+def parse_carousel(text: str) -> dict[str, Any]:
+    """캐러셀 초안 텍스트를 구조화 딕셔너리로 변환한다.
+
+    먼저 엄격 모드로 파싱하고, 카드를 하나도 못 찾으면
+    느슨 모드(미지 형식 폴백)로 자동 재시도한다.
+
+    반환:
+        title         : str
+        meta          : dict (스킬/모드/포맷/톤/제목 유형/주제 ...)
+        cards         : [{"num","label","text","lines"}, ...]  (등장 순서)
+        design_notes  : str
+        review_notes  : str
+    """
+    result = _parse(text, loose=False)
+    if not result["cards"]:
+        fallback = _parse(text, loose=True)
+        if fallback["cards"]:
+            return fallback
     return result
 
 
