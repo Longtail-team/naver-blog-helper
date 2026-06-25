@@ -99,9 +99,9 @@ st.divider()
 # 1) 카드 미리보기 (1080x1350)
 # ---------------------------------------------------------------------------
 st.header("1. 카드 미리보기 (1080×1350)")
-size = st.slider("미리보기 카드 너비(px) — 화면에 맞게 조절", 160, 340, 230)
-st.caption("← → 가로로 스크롤하면 캐러셀처럼 넘겨볼 수 있어요. (색·폰트는 Canva에서 입힙니다)")
-st.markdown(cards_preview_html(data["cards"], card_w=size), unsafe_allow_html=True)
+font_size = st.slider("카드 글자 크기(px)", 10, 28, 15)
+st.caption("실제 1080×1350(4:5) 비율로 한 화면에 3열로 나열했어요. (색·폰트는 Canva에서 입힙니다)")
+st.markdown(cards_preview_html(data["cards"], font_size=font_size), unsafe_allow_html=True)
 
 st.divider()
 

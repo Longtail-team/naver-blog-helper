@@ -187,28 +187,32 @@ _ROLE_STYLE = {
 _DEFAULT_STYLE = ("linear-gradient(135deg,#f6f7ff,#e9ecff)", "#1f2340")
 
 
-def cards_preview_html(cards: list[dict[str, Any]], card_w: int = 230) -> str:
-    """카드들을 1080:1350(4:5) 비율로 가로 스크롤 미리보기 HTML로 만든다."""
-    card_h = round(card_w * 1350 / 1080)
+def cards_preview_html(cards: list[dict[str, Any]], font_size: int = 15,
+                       columns: int = 3) -> str:
+    """카드들을 1080:1350(4:5) 비율 고정으로 화면에 그리드 나열한 HTML을 만든다.
+
+    카드 너비는 그리드 칸에 맞춰 자동(반응형), 비율은 4:5 고정.
+    글자 크기(font_size)만 조절한다. 기본 3열.
+    """
     items = []
     for c in cards:
         bg, fg = _ROLE_STYLE.get(c["label"], _DEFAULT_STYLE)
         text = html.escape(c["text"])
         items.append(
-            f'<div style="flex:0 0 auto;width:{card_w}px;height:{card_h}px;'
-            f'background:{bg};color:{fg};border-radius:14px;padding:20px 18px;'
-            f'box-sizing:border-box;display:flex;flex-direction:column;'
-            f'justify-content:center;align-items:center;text-align:center;'
-            f'white-space:pre-line;font-size:13px;line-height:1.55;position:relative;'
-            f'box-shadow:0 2px 10px rgba(0,0,0,.15);overflow:hidden;">'
+            f'<div style="aspect-ratio:1080/1350;background:{bg};color:{fg};'
+            f'border-radius:14px;padding:8% 7%;box-sizing:border-box;display:flex;'
+            f'flex-direction:column;justify-content:center;align-items:center;'
+            f'text-align:center;white-space:pre-line;font-size:{font_size}px;'
+            f'line-height:1.55;position:relative;box-shadow:0 2px 10px rgba(0,0,0,.15);'
+            f'overflow:hidden;">'
             f'<div style="position:absolute;top:8px;left:11px;font-size:10px;'
             f'opacity:.65;font-weight:600;">#{c["num"]} {html.escape(c["label"])}</div>'
             f'<div>{text}</div></div>'
         )
-    strip = "".join(items)
+    grid = "".join(items)
     return (
-        '<div style="display:flex;gap:14px;overflow-x:auto;'
-        'padding:8px 2px 18px;">' + strip + "</div>"
+        f'<div style="display:grid;grid-template-columns:repeat({columns},1fr);'
+        f'gap:16px;padding:8px 0 18px;">' + grid + "</div>"
     )
 
 
