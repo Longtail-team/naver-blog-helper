@@ -124,29 +124,31 @@ st.divider()
 # ---------------------------------------------------------------------------
 # 2) 카드별 텍스트 (수정 가능 — 미리보기에 반영)
 # ---------------------------------------------------------------------------
-st.header("2. 카드별 텍스트 (수정 가능)")
-st.caption("내용을 고치면 위 미리보기에 바로 반영돼요. 복사는 아래 '복사용' 박스의 📋 를 쓰세요.")
-cols = st.columns(2)
+st.header("2. 카드별 텍스트 (왼쪽 수정 · 오른쪽 복사)")
+st.caption("왼쪽에서 고치면 위 미리보기에 즉시 반영돼요. 오른쪽 박스 📋 로 복사해 Canva에 붙여넣으세요.")
 for i, c in enumerate(cards):
-    with cols[i % 2]:
-        st.text_area(f"#{c['num']} · {c['label']}", key=f"card_text_{i}", height=150)
-
-with st.expander("📋 카드별 복사용 (수정 반영됨)"):
-    for c in edited_cards:
-        st.markdown(f"**#{c['num']} · {c['label']}**")
-        st.code(c["text"], language=None)
+    st.markdown(f"**#{c['num']} · {c['label']}**")
+    left, right = st.columns(2)
+    with left:
+        val = st.text_area(f"#{c['num']} 수정", key=f"card_text_{i}",
+                           height=150, label_visibility="collapsed")
+    with right:
+        st.code(val, language=None)
 
 st.divider()
 
 # ---------------------------------------------------------------------------
 # 3) 인스타 캡션 초안
 # ---------------------------------------------------------------------------
-st.header("3. 인스타 캡션 초안")
-st.caption("카드 내용으로 만든 초안이에요. 자유롭게 고친 뒤 아래 박스 📋 로 복사하세요.")
+st.header("3. 인스타 캡션 초안 (왼쪽 수정 · 오른쪽 복사)")
+st.caption("카드 내용으로 만든 초안이에요. 왼쪽에서 고치면 오른쪽 복사 박스에 반영됩니다.")
 default_caption = build_caption(data)
-edited = st.text_area("캡션 (수정 가능)", default_caption, height=320)
-st.markdown("**복사용 (📋)**")
-st.code(edited, language=None)
+cap_left, cap_right = st.columns(2)
+with cap_left:
+    edited = st.text_area("캡션 수정", default_caption, height=320,
+                          label_visibility="collapsed")
+with cap_right:
+    st.code(edited, language=None)
 
 # ---------------------------------------------------------------------------
 # 4) 메모 (참고용)

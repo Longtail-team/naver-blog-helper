@@ -197,17 +197,24 @@ def cards_preview_html(cards: list[dict[str, Any]], font_size: int = 15,
     items = []
     for c in cards:
         bg, fg = _ROLE_STYLE.get(c["label"], _DEFAULT_STYLE)
-        text = html.escape(c["text"])
+        # 빈 줄로 나뉜 문단 단위로 렌더 — 문단 내 줄바꿈은 <br>,
+        # 문단 사이는 gap(약 1줄 느낌)으로 제어해 여백이 과하지 않게.
+        paras = [p for p in re.split(r"\n\s*\n", c["text"].strip()) if p.strip()]
+        body = (
+            '<div style="display:flex;flex-direction:column;gap:0.7em;">'
+            + "".join("<div>" + html.escape(p).replace("\n", "<br>") + "</div>"
+                      for p in paras)
+            + "</div>"
+        ) if paras else ""
         items.append(
             f'<div style="aspect-ratio:1080/1350;background:{bg};color:{fg};'
             f'border-radius:14px;padding:8% 7%;box-sizing:border-box;display:flex;'
             f'flex-direction:column;justify-content:center;align-items:center;'
-            f'text-align:center;white-space:pre-line;font-size:{font_size}px;'
-            f'line-height:1.55;position:relative;box-shadow:0 2px 10px rgba(0,0,0,.15);'
-            f'overflow:hidden;">'
+            f'text-align:center;font-size:{font_size}px;line-height:1.4;'
+            f'position:relative;box-shadow:0 2px 10px rgba(0,0,0,.15);overflow:hidden;">'
             f'<div style="position:absolute;top:8px;left:11px;font-size:10px;'
             f'opacity:.65;font-weight:600;">#{c["num"]} {html.escape(c["label"])}</div>'
-            f'<div>{text}</div></div>'
+            f'<div>{body}</div></div>'
         )
     grid = "".join(items)
     return (
