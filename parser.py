@@ -393,6 +393,7 @@ def parse_draft(text: str) -> dict[str, Any]:
         body          : {"raw","clean","image_markers"}
         tags          : list[str]                — 네이버 태그
         image_package : {"thumbnail","cards"}    — 이미지 텍스트 패키지
+        cafe_note     : str                      — 카페 공유용 덧붙임 글(원문 그대로)
         crosscheck    : str                      — G2 자막 교차대조표(원문 그대로)
         sections      : dict[str, str]           — 인식된 모든 섹션 원문(디버그용)
     """
@@ -403,6 +404,7 @@ def parse_draft(text: str) -> dict[str, Any]:
         "body": parse_body(_find_section(sections, "본문")),
         "tags": parse_tags(_find_section(sections, "태그")),
         "image_package": parse_image_package(_find_section(sections, "이미지", "패키지")),
+        "cafe_note": _find_section(sections, "덧붙임"),
         "crosscheck": _find_section(sections, "교차대조표"),
         "sections": sections,
     }
