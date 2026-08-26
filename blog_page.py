@@ -151,6 +151,13 @@ if body["clean"]:
     # 메모 토글: 보여줄 원본만 선택(메모 포함/제외). 줄바꿈 토글과 독립적으로 동작.
     base_text = body["raw"] if show_raw else body["clean"]
 
+    # 이 토글은 한 번 켜면 세션 내내 유지된다. 켜둔 걸 잊고 복사하면
+    # [의견]·[자막 근거:] 같은 내부 메모가 그대로 블로그에 붙는 사고가 난다.
+    if show_raw:
+        st.warning("🔴 지금은 **내부 메모 포함** 상태입니다. 이대로 복사하면 "
+                   "`[의견]` `[자막 근거:]` 같은 메모가 블로그에 그대로 들어갑니다. "
+                   "**복사 전에 위 '내부 메모까지 보기'를 끄세요.**")
+
     headings = []
     if blog_format:
         # 줄바꿈이 켜져 있으면 메모 보기와 무관하게 슬라이더·소제목 표시 항상 노출
@@ -254,6 +261,8 @@ for card in pkg["cards"]:
     st.subheader(f"🃏 {card['header']}")
     if card["title"]:
         st.markdown(f"**카드 제목:** {card['title']}")
+    if card.get("visual_concept"):
+        st.info(f"🎨 비주얼 컨셉: {card['visual_concept']}")
 
     if card["grid"]:
         df = grid_to_dataframe(card["grid"])

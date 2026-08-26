@@ -10,6 +10,12 @@
     [이미지 텍스트 패키지]   ← 썸네일 + 카드1~3 텍스트
     [G2 자막 교차대조표]
 
+본문 내 검수용 메모 태그(발행본에서는 자동 제거됨):
+    [자막 근거: "..."]  — 원문 인용 (긴 문구 통째로 제거)
+    〔전문가 보강: ...〕 — 전문가 보강 제안
+    [의견] / [일반 상식] — 근거 등급 표시(태그만 제거, 문장 내용은 유지)
+    [이미지 삽입: ...] — 제거하지 않고 이미지 자리 표시로 그대로 남김
+
 사용:
     from parser import parse_draft
     data = parse_draft(text)        # 문자열 입력
@@ -36,6 +42,9 @@ _SECTION_RE = re.compile(
 _SUBTITLE_NOTE_RE = re.compile(r"\[자막\s*근거:.*?\]", re.DOTALL)      # 출처 자막
 _EXPERT_NOTE_RE = re.compile(r"〔.*?〕", re.DOTALL)                    # 전문가 보강 제안
 _IMAGE_MARK_RE = re.compile(r"\[이미지\s*삽입:\s*(?P<desc>.*?)\]", re.DOTALL)  # 이미지 위치
+# 근거 등급 표시(검수 참고용) — 발행본에는 남기지 않는다.
+# [의견]/[일반 상식] 외에 향후 유사 태그가 추가돼도 흡수하도록 열거형으로 유지.
+_OPINION_TAG_RE = re.compile(r"\[(?:의견|일반\s*상식)\]")
 
 
 def split_sections(text: str) -> dict[str, str]:
@@ -109,6 +118,7 @@ def parse_body(body: str) -> dict[str, Any]:
 
     clean = _SUBTITLE_NOTE_RE.sub("", body)
     clean = _EXPERT_NOTE_RE.sub("", clean)
+    clean = _OPINION_TAG_RE.sub("", clean)
     # 메모 제거로 생긴 3줄 이상 연속 공백 줄을 2줄로 압축
     clean = re.sub(r"\n[ \t]*\n[ \t]*\n+", "\n\n", clean).strip("\n")
 
@@ -181,12 +191,13 @@ def _parse_card(header: str, body: str) -> dict[str, Any]:
 
     카드 본문 관용 구조:
         카드 제목: ...
+        비주얼 컨셉: ...   (2026-08-06 추가 — 카드 작업자용 참고 정보, 발행본 텍스트엔 포함 안 함)
         (본문 라인들)
         한 줄 설명: ...
         하단: ...
     """
-    card: dict[str, Any] = {"header": header.strip(), "title": "", "lines": [],
-                            "grid": [], "note": "", "footer": ""}
+    card: dict[str, Any] = {"header": header.strip(), "title": "", "visual_concept": "",
+                            "lines": [], "grid": [], "note": "", "footer": ""}
     content_lines: list[str] = []
     for line in body.splitlines():
         s = line.strip()
@@ -194,6 +205,8 @@ def _parse_card(header: str, body: str) -> dict[str, Any]:
             continue
         if s.startswith("카드 제목:"):
             card["title"] = s.split(":", 1)[1].strip()
+        elif s.startswith("비주얼 컨셉:"):
+            card["visual_concept"] = s.split(":", 1)[1].strip()
         elif s.startswith("한 줄 설명:"):
             card["note"] = s.split(":", 1)[1].strip()
         elif s.startswith("하단:"):
@@ -242,6 +255,8 @@ _SENT_SPLIT_RE = re.compile(r"(?<=[.!?…。])\s+")
 # 쉼표 + '공백' 기준 분리 → "3,000" "1,300L" 처럼 공백 없는 숫자 쉼표는 안 끊김
 _CLAUSE_SPLIT_RE = re.compile(r"(?<=,)\s+")
 _SENT_END_CHARS = ".!?…。"
+# 원문에 이미 적혀 있는 소제목 마커(스킬 §7 규칙). 중복 부착을 막기 위해 먼저 벗겨낸다.
+_HEADING_MARK_RE = re.compile(r"\s*@@\s*소제목\s*강조\s*$")
 
 
 def _is_heading(line: str) -> bool:
@@ -322,9 +337,13 @@ def format_for_blog(text: str, max_len: int = 30,
         if s.startswith("["):  # 이미지 삽입 마커 등은 그대로
             out.append(s)
             continue
-        if _is_heading(s):
-            headings.append(s)
-            out.append(f"{s}  {heading_mark}" if heading_mark else s)
+        # 원문에 이미 붙어 있는 마커를 먼저 제거한 뒤 판정한다.
+        # (제거하지 않으면 ①마커가 두 번 붙고 ②마커 길이 때문에 40자 제한에 걸려
+        #  긴 소제목이 본문으로 오인식된다.)
+        core = _HEADING_MARK_RE.sub("", s).rstrip()
+        if _is_heading(core):
+            headings.append(core)
+            out.append(f"{core}  {heading_mark}" if heading_mark else core)
             continue
         for sent in _SENT_SPLIT_RE.split(s):
             sent = sent.strip()
@@ -451,7 +470,7 @@ if __name__ == "__main__":
     print(f"\n카드 {len(pkg['cards'])}장:")
     for c in pkg["cards"]:
         kind = f"표 {len(c['grid'])}행" if c["grid"] else f"텍스트 {len(c['lines'])}줄"
-        print(f"  - [{c['header']}] 제목='{c['title']}' ({kind})")
+        print(f"  - [{c['header']}] 제목='{c['title']}' 비주얼컨셉='{c['visual_concept']}' ({kind})")
         if c["grid"]:
             for row in c["grid"]:
                 print("      " + " | ".join(row))
