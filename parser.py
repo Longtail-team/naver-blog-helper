@@ -119,7 +119,7 @@ def parse_body(body: str) -> dict[str, Any]:
     clean = _SUBTITLE_NOTE_RE.sub("", body)
     clean = _EXPERT_NOTE_RE.sub("", clean)
     clean = _OPINION_TAG_RE.sub("", clean)
-    clean = _MD_EMPHASIS_RE.sub(r"", clean)
+    clean = _MD_EMPHASIS_RE.sub(_MD_KEEP, clean)
     # 메모 제거로 생긴 3줄 이상 연속 공백 줄을 2줄로 압축
     clean = re.sub(r"\n[ \t]*\n[ \t]*\n+", "\n\n", clean).strip("\n")
 
@@ -263,6 +263,7 @@ _HEADING_MARK_RE = re.compile(r"\s*@@\s*소제목\s*강조\s*$")
 _GRID_ROW_RE = re.compile(r"\S {2,}\S")
 # 마크다운 강조는 네이버·파서 어느 쪽도 렌더링하지 않으므로 발행본에서 걷어낸다.
 _MD_EMPHASIS_RE = re.compile(r"\*{1,3}(.+?)\*{1,3}", re.S)
+_MD_KEEP = chr(92) + "1"   # 역참조. 문자열 조립으로 이스케이프 사고를 막는다
 
 
 def _is_heading(line: str) -> bool:
