@@ -119,6 +119,7 @@ def parse_body(body: str) -> dict[str, Any]:
     clean = _SUBTITLE_NOTE_RE.sub("", body)
     clean = _EXPERT_NOTE_RE.sub("", clean)
     clean = _OPINION_TAG_RE.sub("", clean)
+    clean = _MD_EMPHASIS_RE.sub(r"", clean)
     # 메모 제거로 생긴 3줄 이상 연속 공백 줄을 2줄로 압축
     clean = re.sub(r"\n[ \t]*\n[ \t]*\n+", "\n\n", clean).strip("\n")
 
@@ -257,6 +258,11 @@ _CLAUSE_SPLIT_RE = re.compile(r"(?<=,)\s+")
 _SENT_END_CHARS = ".!?…。"
 # 원문에 이미 적혀 있는 소제목 마커(스킬 §7 규칙). 중복 부착을 막기 위해 먼저 벗겨낸다.
 _HEADING_MARK_RE = re.compile(r"\s*@@\s*소제목\s*강조\s*$")
+# 본문 속 격자 표 행(공백 2칸 이상으로 칸을 나눈 줄)은 소제목이 아니다.
+# _parse_grid 와 같은 기준을 쓴다.
+_GRID_ROW_RE = re.compile(r"\S {2,}\S")
+# 마크다운 강조는 네이버·파서 어느 쪽도 렌더링하지 않으므로 발행본에서 걷어낸다.
+_MD_EMPHASIS_RE = re.compile(r"\*{1,3}(.+?)\*{1,3}", re.S)
 
 
 def _is_heading(line: str) -> bool:
@@ -272,6 +278,8 @@ def _is_heading(line: str) -> bool:
     """
     s = line.strip()
     if not s or s.startswith("[") or ":" in s:
+        return False
+    if _GRID_ROW_RE.search(s):  # 격자 표 행은 소제목이 아님
         return False
     if any(ch.isdigit() for ch in s):  # 수치 데이터 줄 제외
         return False
